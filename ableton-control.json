@@ -1,0 +1,95 @@
+{
+  "name": "Ableton control",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [-448, -16],
+      "id": "node-001",
+      "name": "When chat message received",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.content;\nconst cleaned = raw.replace(/```json/gi,'').replace(/```/g,'').trim();\nconst start = cleaned.indexOf('{');\nconst end = cleaned.lastIndexOf('}');\nif (start === -1 || end === -1) throw new Error('Nessun JSON trovato: ' + raw);\n\nlet parsed;\ntry { parsed = JSON.parse(cleaned.substring(start, end + 1)); }\ncatch(e) { throw new Error('JSON non valido: ' + e.message); }\n\n// ── LOOKUP TABLE ──────────────────────────────────────────────\nconst TRACK_DEFAULTS = {\n  kick:         { type:'audio',      channel:'mono',   color:'red',    input_channel:'Ch. 1', send_drums:true  },\n  snare:        { type:'audio',      channel:'mono',   color:'red',    input_channel:'Ch. 2', send_drums:true  },\n  tom:          { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  'floor tom':  { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  'hi-hat':     { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  hihat:        { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  cymbal:       { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  cymbals:      { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  hats:         { type:'audio',      channel:'mono',   color:'red',    input_channel:'auto',  send_drums:true  },\n  'synth pad':  { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  'synth lead': { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  lead:         { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  overhead:     { type:'audio',      channel:'stereo', color:'orange', input_channel:'auto',  send_drums:true  },\n  room:         { type:'audio',      channel:'stereo', color:'orange', input_channel:'auto',  send_drums:true  },\n  bass:         { type:'audio',      channel:'mono',   color:'yellow', input_channel:'auto',  send_bass:true   },\n  'bass di':    { type:'audio',      channel:'mono',   color:'yellow', input_channel:'auto',  send_bass:true   },\n  guitar:       { type:'audio',      channel:'mono',   color:'green',  input_channel:'auto',  send_guitar:true },\n  chitarra:     { type:'audio',      channel:'mono',   color:'green',  input_channel:'auto',  send_guitar:true },\n  vocal:        { type:'audio',      channel:'mono',   color:'blue',   input_channel:'auto',  send_vocal:true  },\n  vocals:       { type:'audio',      channel:'mono',   color:'blue',   input_channel:'auto',  send_vocal:true  },\n  voce:         { type:'audio',      channel:'mono',   color:'blue',   input_channel:'auto',  send_vocal:true  },\n  'drum rack':  { type:'instrument', channel:'stereo', color:'red',    device:'Drum Rack',    send_drums:true  },\n  drumrack:     { type:'instrument', channel:'stereo', color:'red',    device:'Drum Rack',    send_drums:true  },\n  synth:        { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  pad:          { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  analog:       { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',       send_synth:true  },\n  wavetable:    { type:'instrument', channel:'stereo', color:'cyan',   device:'Wavetable',    send_synth:true  },\n  operator:     { type:'instrument', channel:'stereo', color:'cyan',   device:'Operator',     send_synth:true  },\n  piano:        { type:'instrument', channel:'stereo', color:'cyan',   device:'Electric',     send_synth:true  },\n  keys:         { type:'instrument', channel:'stereo', color:'cyan',   device:'Electric',     send_synth:true  },\n  sampler:      { type:'instrument', channel:'stereo', color:'purple', device:'Sampler',      send_synth:true  },\n  impulse:      { type:'instrument', channel:'stereo', color:'purple', device:'Impulse',      send_drums:true  },\n  'overhead stereo': { type:'audio',      channel:'stereo', color:'orange', input_channel:'auto', send_drums:true  },\n  'voice lead':      { type:'audio',      channel:'mono',   color:'blue',   input_channel:'auto', send_vocal:true  },\n  'lead vocal':      { type:'audio',      channel:'mono',   color:'blue',   input_channel:'auto', send_vocal:true  },\n  'synth pad':       { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',      send_synth:true  },\n  'synth lead':      { type:'instrument', channel:'stereo', color:'cyan',   device:'Analog',      send_synth:true  },\n};\n\nconst BUS_DEFAULTS = {\n  'reverb bus': { effects:['Hybrid Reverb'] },\n  'delay bus':  { effects:['Echo']          },\n  'echo bus':   { effects:['Echo']          },\n  'chorus bus': { effects:['Chorus-Ensemble'] },\n  'comp bus':   { effects:['Glue Compressor'] },\n};\n\n// ── BUILD SESSION JSON ────────────────────────────────────────\nconst busNames = (parsed.buses || []);\nconst hasReverb = busNames.some(b => b.toLowerCase().includes('reverb'));\nconst hasDelay  = busNames.some(b => b.toLowerCase().includes('delay'));\n\nconst tracks = [];\nlet audioChannelCounter = 1;\nlet id = 1;\n\nfor (const inst of (parsed.instruments || [])) {\n  const key = inst.name.toLowerCase().trim();\n  const def = TRACK_DEFAULTS[key] || {\n    type: 'audio', channel: 'mono', color: 'gray', input_channel: 'auto'\n  };\n\n  const qty = inst.quantity || 1;\n  for (let i = 0; i < qty; i++) {\n    const trackName = qty > 1 ? `${inst.name} ${i+1}` : inst.name\n      .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');\n\n    const sendTo = [];\n    if (hasReverb && (def.send_drums || def.send_guitar || def.send_vocal || def.send_synth)) {\n      sendTo.push(busNames.find(b => b.toLowerCase().includes('reverb')));\n    }\n    if (hasDelay && (def.send_guitar || def.send_vocal || def.send_synth)) {\n      sendTo.push(busNames.find(b => b.toLowerCase().includes('delay')));\n    }\n\n    const track = {\n      id: id++,\n      name: trackName,\n      type: def.type,\n      channel: def.channel,\n      color: def.color,\n      volume: 0.85,\n      pan: 0,\n      mute: false,\n      effects: inst.effects || [],\n      send_to: sendTo.filter(Boolean),\n    };\n\n    if (def.type === 'audio') {\n      track.input_type = 'Ext. In';\n      track.input_channel = def.input_channel === 'auto'\n        ? `Ch. ${audioChannelCounter++}`\n        : def.input_channel;\n      if (def.input_channel !== 'auto') audioChannelCounter++;\n    }\n\n    if (def.device) track.device = def.device;\n\n    tracks.push(track);\n  }\n}\n\nconst buses = busNames.map(name => {\n  const key = name.toLowerCase().trim();\n  const def = BUS_DEFAULTS[key] || { effects: [] };\n  return {\n    name,\n    type: 'fx',\n    color: 'purple',\n    volume: 0.85,\n    output: 'Master',\n    effects: def.effects,\n  };\n});\n\nconst result = {\n  session: {\n    name: parsed.session_name || 'Session',\n    tempo: parsed.tempo || 120,\n    time_signature: parsed.time_signature || '4/4',\n  },\n  tracks,\n  buses,\n};\n\nif (result.tracks.length === 0) {\n  throw new Error('Nessuna traccia generata — controlla il prompt');\n}\n\nreturn [{ json: result }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-32, -16],
+      "id": "node-002",
+      "name": "Estrai JSON sessione"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5679/run-session",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [176, -16],
+      "id": "node-003",
+      "name": "Mac Bridge - Crea Sessione"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "YOUR_OLLAMA_MODEL",
+          "mode": "list",
+          "cachedResultName": "YOUR_OLLAMA_MODEL"
+        },
+        "messages": {
+          "values": [
+            {},
+            {
+              "content": "={{ $json.chatInput }}"
+            }
+          ]
+        },
+        "options": {
+          "system": "/no_think\nL'utente ti darà una descrizione di una sessione audio.\nAnalizza ESCLUSIVAMENTE il testo che l'utente ti invia adesso — ignora qualsiasi esempio.\nRestituisci SOLO un JSON valido, senza testo aggiuntivo, senza ripetere l'input.\n\n{\n  \"tempo\": number (BPM, default 120 se non specificato),\n  \"time_signature\": string (default \"4/4\"),\n  \"session_name\": string (descrivi brevemente il tipo di sessione),\n  \"instruments\": [\n    {\n      \"name\": string (nome strumento),\n      \"quantity\": number (quante, default 1),\n      \"effects\": []\n    }\n  ],\n  \"buses\": [string]\n}\n\nREGOLE:\n- \"due chitarre\" → {\"name\": \"guitar\", \"quantity\": 2}\n- \"tre tom\" → {\"name\": \"tom\", \"quantity\": 3}\n- Non inferire strumenti non menzionati\n- Non aggiungere effetti non richiesti\n- buses contiene solo i bus menzionati\n- Gli strumenti software come \"drum rack\", \"synth\", \"pad\", \"synth pad\", \n  \"wavetable\", \"operator\", \"sampler\" sono strumenti validi — includili sempre.\n- \"stereo\" descrive il tipo di segnale, NON la quantità. \n  \"overhead stereo\" = 1 traccia, non 2."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [-304, 0],
+      "id": "node-004",
+      "name": "Message a model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_OLLAMA_CREDENTIAL_ID",
+          "name": "Ollama local"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [[{ "node": "Message a model", "type": "main", "index": 0 }]]
+    },
+    "Estrai JSON sessione": {
+      "main": [[{ "node": "Mac Bridge - Crea Sessione", "type": "main", "index": 0 }]]
+    },
+    "Message a model": {
+      "main": [[{ "node": "Estrai JSON sessione", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "meta": {
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "tags": []
+}

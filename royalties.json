@@ -1,0 +1,488 @@
+{
+  "name": "Royalties",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 13-17 * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 0],
+      "id": "node-001",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "simple": false,
+        "filters": {
+          "q": "from:do-not-reply@soundrop.com subject:\"Statement for YOUR_LABEL_NAME\" has:attachment newer_than:30d -label:YOUR_GMAIL_LABEL_NAME"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [144, 0],
+      "id": "node-002",
+      "name": "Get many messages",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "attachment_0"
+      },
+      "type": "n8n-nodes-base.compression",
+      "typeVersion": 1.1,
+      "position": [576, -16],
+      "id": "node-003",
+      "name": "Compression"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-001",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [304, 0],
+      "id": "node-004",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "file_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [784, -16],
+      "id": "node-005",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst firstRow = items[0].json;\nconst statementTotal = parseFloat(firstRow['Statement Total in USD']) || 0;\nconst openingBalance = parseFloat(firstRow['Opening Balance in USD']) || 0;\nconst closingBalance = parseFloat(firstRow['Closing Balance in USD']) || 0;\n\nconst aggregated = {};\n\nfor (const item of items) {\n  const row = item.json;\n  if (!row['ISRC'] || !row['Service']) continue;\n\n  const key = row['ISRC'];\n\n  if (!aggregated[key]) {\n    aggregated[key] = {\n      statementPeriod:  row['Statement Period'],\n      isrc:             row['ISRC'],\n      trackTitle:       row['Track Title'],\n      releaseTitle:     row['Release Title'],\n      upc:              row['UPC'],\n      artist:           row['Artist'],\n      streams:          0,\n      revenueUSD:       0,\n      services:         [],\n      statementTotal,\n      openingBalance,\n      closingBalance,\n    };\n  }\n\n  const entry = aggregated[key];\n  entry.streams    += parseInt(row['Quantity']) || 0;\n  entry.revenueUSD += parseFloat(row['Amount Due in USD']) || 0;\n\n  if (row['Service'] && !entry.services.includes(row['Service'])) {\n    entry.services.push(row['Service']);\n  }\n}\n\nreturn Object.values(aggregated).map(entry => ({\n  json: {\n    ...entry,\n    revenueUSD:  Math.round(entry.revenueUSD * 1000000) / 1000000,\n    services:    entry.services.join(', '),\n    notionTitle: entry.trackTitle,\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [992, -16],
+      "id": "node-006",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1200, -16],
+      "id": "node-007",
+      "name": "Loop Over Items",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_RELEASES_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Releases",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_RELEASES_DB_ID"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "UPC|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $json.upc }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1344, 48],
+      "id": "node-008",
+      "name": "Get many database pages",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_ARTISTS_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Artists",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_ARTISTS_DB_ID"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Artista|title",
+              "condition": "equals",
+              "titleValue": "={{ $('Code in JavaScript').item.json.artist }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1504, 48],
+      "id": "node-009",
+      "name": "Get many database pages1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_ROYALTIES_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Royalties",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_ROYALTIES_DB_ID"
+        },
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "ISRC|rich_text",
+              "condition": "does_not_contain",
+              "richTextValue": "={{ $('Code in JavaScript').item.json.isrc }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1696, 48],
+      "id": "node-010",
+      "name": "Get many database pages2",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst existing = items[0].json;\nconst newData = $('Code in JavaScript').item.json;\n\nconst prevTotalStreams  = Number(existing.property_total_streams)  || 0;\nconst prevTotalRevenue = Number(existing.property_total_revenue_usd) || 0;\nconst lastPeriodRev    = Number(existing.property_last_period_revenue) || 0;\nconst newPeriodRev     = Number(newData.revenueUSD) || 0;\n\nconst newTotalStreams  = prevTotalStreams + (Number(newData.streams) || 0);\nconst newTotalRevenue = Math.round((prevTotalRevenue + newPeriodRev) * 1000000) / 1000000;\n\nlet deltaPercent = null;\nif (lastPeriodRev > 0) {\n  deltaPercent = Math.round(((newPeriodRev - lastPeriodRev) / lastPeriodRev) * 10000) / 100;\n}\n\nreturn [\n  {\n    json: {\n      pageId:              String(existing.id || ''),\n      newTotalStreams:      newTotalStreams,\n      newTotalRevenue:     newTotalRevenue,\n      prevPeriodRevenue:   lastPeriodRev,\n      lastPeriodRevenue:   newPeriodRev,\n      deltaPercent:        deltaPercent,\n      lastStatementPeriod: String(newData.statementPeriod || ''),\n      services:            String(newData.services || ''),\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2048, -112],
+      "id": "node-011",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_ROYALTIES_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Royalties",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_ROYALTIES_DB_ID"
+        },
+        "title": "={{ $('Code in JavaScript').item.json.notionTitle }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "ISRC|rich_text",
+              "textContent": "={{ $('Code in JavaScript').item.json.isrc }}"
+            },
+            {
+              "key": "Total Streams|number",
+              "numberValue": "={{ $('Code in JavaScript').item.json.streams }}"
+            },
+            {
+              "key": "Total Revenue USD|number",
+              "numberValue": "={{ $('Code in JavaScript').item.json.revenueUSD }}"
+            },
+            {
+              "key": "Last Period Revenue|number",
+              "numberValue": "={{ $('Code in JavaScript').item.json.revenueUSD }}"
+            },
+            {
+              "key": "Prev Period Revenue|number"
+            },
+            {
+              "key": "Delta %|number"
+            },
+            {
+              "key": "Last Statement Period|rich_text",
+              "textContent": "={{ $('Code in JavaScript').item.json.statementPeriod }}"
+            },
+            {
+              "key": "Service|rich_text",
+              "textContent": "={{ $('Code in JavaScript').item.json.services }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [2208, 128],
+      "id": "node-012",
+      "name": "Create a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst count = items.length;\n\nconst seen = new Set();\nconst unique = [];\n\nfor (const item of items) {\n  const subject = item.json.headers?.Subject || item.json.subject || '';\n  if (!seen.has(subject)) {\n    seen.add(subject);\n    unique.push(item);\n  }\n}\n\nunique.sort((a, b) => {\n  const dateA = parseInt(a.json.internalDate || '0');\n  const dateB = parseInt(b.json.internalDate || '0');\n  return dateA - dateB;\n});\n\nif (unique.length === 0) {\n  return [{ json: { debug: true, inputCount: count, outputCount: 0, firstSubject: items[0]?.json?.headers?.Subject || 'nessuno' } }];\n}\n\nreturn unique.map(item => ({\n  json: item.json,\n  binary: item.binary\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [432, -16],
+      "id": "node-013",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-002",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1872, 0],
+      "id": "node-014",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $json.pageId }}",
+          "mode": "id"
+        },
+        "simple": false,
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "=Total Streams|number",
+              "numberValue": "={{ $json.newTotalStreams }}"
+            },
+            {
+              "key": "=Total Revenue USD|number",
+              "numberValue": "={{ $json.newTotalRevenue }}"
+            },
+            {
+              "key": "=Last Period Revenue|number",
+              "numberValue": "={{ $json.lastPeriodRevenue }}"
+            },
+            {
+              "key": "=Prev Period Revenue|number",
+              "numberValue": "={{ $json.prevPeriodRevenue }}"
+            },
+            {
+              "key": "=Delta %|number",
+              "numberValue": "={{ $json.deltaPercent }}"
+            },
+            {
+              "key": "=Last Statement Period|rich_text",
+              "textContent": "={{ $json.lastStatementPeriod }}"
+            },
+            {
+              "key": "=Service|rich_text",
+              "textContent": "="{{ $json.services }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [2256, -80],
+      "id": "node-015",
+      "name": "Update a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Get many messages').item.json.id }}",
+        "labelIds": [
+          "YOUR_GMAIL_LABEL_ID"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [288, -192],
+      "id": "node-016",
+      "name": "Add label to message",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Get many messages", "type": "main", "index": 0 }]]
+    },
+    "Get many messages": {
+      "main": [
+        [
+          { "node": "If", "type": "main", "index": 0 },
+          { "node": "Add label to message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "If": {
+      "main": [[{ "node": "Code in JavaScript2", "type": "main", "index": 0 }]]
+    },
+    "Compression": {
+      "main": [[{ "node": "Extract from File", "type": "main", "index": 0 }]]
+    },
+    "Extract from File": {
+      "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+    },
+    "Code in JavaScript": {
+      "main": [[{ "node": "Loop Over Items", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [{ "node": "Get many database pages", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get many database pages": {
+      "main": [[{ "node": "Get many database pages1", "type": "main", "index": 0 }]]
+    },
+    "Get many database pages1": {
+      "main": [[{ "node": "Get many database pages2", "type": "main", "index": 0 }]]
+    },
+    "Get many database pages2": {
+      "main": [
+        [
+          { "node": "Loop Over Items", "type": "main", "index": 0 },
+          { "node": "If1", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [[{ "node": "Update a database page", "type": "main", "index": 0 }]]
+    },
+    "Code in JavaScript2": {
+      "main": [[{ "node": "Compression", "type": "main", "index": 0 }]]
+    },
+    "If1": {
+      "main": [
+        [{ "node": "Code in JavaScript1", "type": "main", "index": 0 }],
+        [{ "node": "Create a database page", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "meta": {
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "tags": []
+}

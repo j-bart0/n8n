@@ -1,0 +1,186 @@
+{
+  "name": "Song metadata",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://audio-analyzer:8001/analyze",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file_path",
+              "value": "=/audio/{{ $json.filename }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 200000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [208, -64],
+      "id": "node-001",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_SONGS_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Songs",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_SONGS_DB_ID"
+        },
+        "title": "={{ $json.title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "BPM|number",
+              "numberValue": "={{ $json.bpm }}"
+            },
+            {
+              "key": "Description|rich_text",
+              "textContent": "={{ $json.description }}"
+            },
+            {
+              "key": "Duration|rich_text",
+              "richText": true,
+              "text": {
+                "text": [
+                  {
+                    "text": "={{ Math.floor($json.duration_seconds / 60) + ':' + String(Math.floor($json.duration_seconds % 60)).padStart(2, '0') }}",
+                    "annotationUi": {}
+                  }
+                ]
+              }
+            },
+            {
+              "key": "Key|select",
+              "selectValue": "={{ $json.key }}"
+            },
+            {
+              "key": "Mood|multi_select",
+              "multiSelectValue": "={{ $json.mood }}"
+            },
+            {
+              "key": "Sample Rate|number",
+              "numberValue": "={{ $json.sample_rate }}"
+            },
+            {
+              "key": "Bit-depth|rich_text",
+              "textContent": "={{ $json.bit_depth }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [384, -144],
+      "id": "node-002",
+      "name": "Create a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-384, -48],
+      "id": "node-003",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "http://audio-analyzer:8001/list",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-240, -16],
+      "id": "node-004",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_SONGS_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Songs",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_SONGS_DB_ID"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [-96, -16],
+      "id": "node-005",
+      "name": "Get many database pages",
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// File nella cartella (da nodo HTTP Request)\nconst files = $('HTTP Request1').first().json.files;\n\n// Titoli già presenti in Notion\nlet existingTitles = [];\ntry {\n  const notionPages = $('Get many database pages').all();\n  existingTitles = notionPages.map(page => page.json.property_title || \"\");\n} catch(e) {\n  existingTitles = [];\n}\n\n// Filtra solo i file non ancora in Notion\nconst newFiles = files.filter(filename => {\n  const title = filename.replace(/\\.[^/.]+$/, \"\");\n  return !existingTitles.includes(title);\n});\n\nreturn newFiles.map(filename => ({ json: { filename } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [48, -16],
+      "id": "node-006",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [[{ "node": "Create a database page", "type": "main", "index": 0 }]]
+    },
+    "Schedule Trigger": {
+      "main": [[{ "node": "HTTP Request1", "type": "main", "index": 0 }]]
+    },
+    "HTTP Request1": {
+      "main": [[{ "node": "Get many database pages", "type": "main", "index": 0 }]]
+    },
+    "Get many database pages": {
+      "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+    },
+    "Code in JavaScript": {
+      "main": [[{ "node": "HTTP Request", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "meta": {
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "tags": []
+}

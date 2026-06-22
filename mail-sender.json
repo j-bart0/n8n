@@ -1,0 +1,166 @@
+{
+  "name": "Mail sender",
+  "nodes": [
+    {
+      "parameters": {
+        "fromEmail": "YOUR_EMAIL@example.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.message }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [448, -32],
+      "id": "node-001",
+      "name": "Send an Email",
+      "credentials": {
+        "smtp": {
+          "id": "YOUR_SMTP_CREDENTIAL_ID",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "YOUR_NOTION_ARTISTS_DB_ID",
+          "mode": "list",
+          "cachedResultName": "Artists",
+          "cachedResultUrl": "https://www.notion.so/YOUR_NOTION_ARTISTS_DB_ID"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [64, 0],
+      "id": "node-002",
+      "name": "Get many database pages",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "public": true,
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [-576, -16],
+      "id": "node-003",
+      "name": "When chat message received",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Sei l'assistente email di [NOME UTENTE], produttore musicale e titolare di un'etichetta discografica indipendente.\n\nL'utente ti indica un destinatario e un messaggio da inviare.\nRiscrivi il contenuto come email professionale ma diretta, con tono caldo — non burocratico.\n\nREGOLE FONDAMENTALI:\n- Rispondi SEMPRE nella stessa lingua usata dall'utente\n- Nel campo \"to\" copia il nome del destinatario ESATTAMENTE come scritto dall'utente, senza modificarlo, tradurlo o correggerlo\n- Non aggiungere mai titoli, correzioni o varianti al nome\n\nRispondi ESCLUSIVAMENTE con un JSON valido:\n{\"to\": \"nome destinatario esatto\", \"subject\": \"oggetto breve\", \"body\": \"testo email\"}\n\nSolo JSON. Niente altro."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [-400, -16],
+      "id": "node-004",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "YOUR_OLLAMA_MODEL",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [-432, 176],
+      "id": "node-005",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_OLLAMA_CREDENTIAL_ID",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.output;\n\ntry {\n  const jsonMatch = raw.match(/\\{[\\s\\S]*\"to\"[\\s\\S]*\"body\"[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    return [{ json: { \n      to: parsed.to, \n      subject: parsed.subject || '', \n      message: parsed.body \n    }}];\n  }\n} catch(e) {}\n\nreturn [{ json: { to: \"\", subject: \"\", message: raw } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-128, -16],
+      "id": "node-006",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "jsCode": "const to = $('Code').first().json.to.toLowerCase();\nconst message = $('Code').first().json.message;\nconst subject = $('Code').first().json.subject;\n\nconst nome = $input.item.json.property_nome?.toLowerCase() || '';\nconst artista = $input.item.json.property_artista?.toLowerCase() || '';\nconst email = $input.item.json.property_email;\n\nif (nome.includes(to) || artista.includes(to) || to.includes(artista)) {\n  return [{ json: { message, email, subject } }];\n} else {\n  return [];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [256, 0],
+      "id": "node-007",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "message": "=Email inviata a {{ $('Code1').first().json.email }} con oggetto: {{ $('Code1').first().json.subject }}",
+        "options": {
+          "memoryConnection": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.2,
+      "position": [640, 32],
+      "id": "node-008",
+      "name": "Chat",
+      "webhookId": "YOUR_WEBHOOK_ID_2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Send an Email": {
+      "main": [[{ "node": "Chat", "type": "main", "index": 0 }]]
+    },
+    "Get many database pages": {
+      "main": [[{ "node": "Code1", "type": "main", "index": 0 }]]
+    },
+    "When chat message received": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "AI Agent": {
+      "main": [[{ "node": "Code", "type": "main", "index": 0 }]]
+    },
+    "Code": {
+      "main": [[{ "node": "Get many database pages", "type": "main", "index": 0 }]]
+    },
+    "Code1": {
+      "main": [[{ "node": "Send an Email", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "meta": {
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "tags": []
+}
